@@ -1361,8 +1361,8 @@ class LoggedIO:
     def segment_filename(self, segment):
         return os.path.join(self.path, 'data', str(segment // self.segments_per_dir), str(segment))
 
-    def get_write_fd(self, no_new=False, want_new=False, raise_full=False):
-        if not no_new and (want_new or self.offset and self.offset > self.limit):
+    def get_write_fd(self, no_new=False, want_new=False, raise_full=False, data_size=None):
+        if not no_new and (want_new or self.offset and (self.offset + (data_size if data_size is not None else 0)) > self.limit):
             if raise_full:
                 raise self.SegmentFull
             self.close_segment()
@@ -1591,7 +1591,7 @@ class LoggedIO:
         if data_size > MAX_DATA_SIZE:
             # this would push the segment entry size beyond MAX_OBJECT_SIZE.
             raise IntegrityError('More than allowed put data [{} > {}]'.format(data_size, MAX_DATA_SIZE))
-        fd = self.get_write_fd(want_new=(id == Manifest.MANIFEST_ID), raise_full=raise_full)
+        fd = self.get_write_fd(want_new=(id == Manifest.MANIFEST_ID), raise_full=raise_full, data_size=data_size)
         size = data_size + self.put_header_fmt.size
         offset = self.offset
         header = self.header_no_crc_fmt.pack(size, TAG_PUT)
