@@ -1226,13 +1226,22 @@ class Repository:
                 f"     assumed object size: {size}"
             )
         else:
-            size = self.io.read(segment, offset, id, read_data=False)
+            # CRUDE HACK
+            # heuristic works statistically okay with large nobj, but not so okay with small nobj (<10)
+            size = int((self.io.segment_size(segment) - MAGIC_LEN) / (self.segments[segment] + 1))
             logger.error(
-                f"XXX: reading on delete(segment={segment}, offset={offset}):\n"
+                f"XXX: CRUDE HACK on delete(segment={segment}, offset={offset}, nobj>=10): assuming proportional size:\n"
                 f"     objects in seg: {self.segments[segment] + 1}\n"
-                f"     reading segment size: {self.io.segment_size(segment)} bytes\n"
-                f"     to delete object size: {size} bytes"
+                f"     assumed object size: {size}"
             )
+        #else:
+        #    size = self.io.read(segment, offset, id, read_data=False)
+        #    logger.error(
+        #        f"XXX: reading on delete(segment={segment}, offset={offset}):\n"
+        #        f"     objects in seg: {self.segments[segment] + 1}\n"
+        #        f"     reading segment size: {self.io.segment_size(segment)} bytes\n"
+        #        f"     to delete object size: {size} bytes"
+        #    )
         self.storage_quota_use -= size
         self.compact[segment] += size
 
