@@ -901,10 +901,7 @@ class Repository:
                     if self.io.segment_exists(s):
                         # the old index is not necessarily valid for this transaction (e.g. compaction); if the segment
                         # is already gone, then it was already compacted.
-                        self.segments[s] -= 1
-                        size = self.io.read(s, offset, key, read_data=False)
-                        self.storage_quota_use -= size
-                        self.compact[s] += size
+                        self._delete_object(s, offset, key, write_delete=False)
             elif tag == TAG_COMMIT:
                 continue
             else:
@@ -1183,13 +1180,7 @@ class Repository:
         except KeyError:
             pass
         else:
-            self.segments[segment] -= 1
-            size = self.io.read(segment, offset, id, read_data=False)
-            self.storage_quota_use -= size
-            self.compact[segment] += size
-            segment, size = self.io.write_delete(id)
-            self.compact[segment] += size
-            self.segments.setdefault(segment, 0)
+            self._delete_object(segment, offset, id, write_delete=True)
         segment, offset = self.io.write_put(id, data)
         self.storage_quota_use += len(data) + self.io.put_header_fmt.size
         self.segments.setdefault(segment, 0)
@@ -1213,10 +1204,41 @@ class Repository:
         except KeyError:
             raise self.ObjectNotFound(id, self.path) from None
         self.shadow_index.setdefault(id, []).append(segment)
+        self._delete_object(segment, offset, id, write_delete=True)
+
+    # HACK: smart object delete that tries to avoid reading the object being deleted
+    def _delete_object(self, segment, offset, id, *, write_delete):
         self.segments[segment] -= 1
-        size = self.io.read(segment, offset, id, read_data=False)
+        if self.segments[segment] == 0:
+            # this was the only object in segment
+            size = self.io.segment_size(segment) - MAGIC_LEN
+            logger.debug(
+                f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=1) -- deleting the only object in seg:\n"
+                f"     segment size: {size + MAGIC_LEN}\n"
+                f"     assumed object size: {size}"
+            )
+        elif self.segments[segment] == 1 and offset > MAGIC_LEN:
+            # we are deleting the last object in segment
+            size = self.io.segment_size(segment) - offset
+            logger.debug(
+                f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=2): deleting last object in seg:\n"
+                f"     segment size: {size + offset}\n"
+                f"     assumed object size: {size}"
+            )
+        else:
+            size = self.io.read(segment, offset, id, read_data=False)
+            logger.error(
+                f"XXX: reading on delete(segment={segment}, offset={offset}):\n"
+                f"     objects in seg: {self.segments[segment] + 1}\n"
+                f"     reading segment size: {self.io.segment_size(segment)} bytes\n"
+                f"     to delete object size: {size} bytes"
+            )
         self.storage_quota_use -= size
         self.compact[segment] += size
+
+        if not write_delete:
+            return
+
         segment, size = self.io.write_delete(id)
         self.compact[segment] += size
         self.segments.setdefault(segment, 0)
