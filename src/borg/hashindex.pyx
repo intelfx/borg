@@ -199,7 +199,7 @@ cdef class FuseVersionsIndex(IndexBase):
 
 cdef class NSIndex(IndexBase):
 
-    value_size = 8
+    value_size = 12
 
     def __getitem__(self, key):
         assert len(key) == self.key_size
@@ -208,15 +208,16 @@ cdef class NSIndex(IndexBase):
             raise KeyError(key)
         cdef uint32_t segment = _le32toh(data[0])
         assert segment <= _MAX_VALUE, "maximum number of segments reached"
-        return segment, _le32toh(data[1])
+        return segment, _le32toh(data[1]), _le32toh(data[2])
 
     def __setitem__(self, key, value):
         assert len(key) == self.key_size
-        cdef uint32_t[2] data
+        cdef uint32_t[3] data
         cdef uint32_t segment = value[0]
         assert segment <= _MAX_VALUE, "maximum number of segments reached"
         data[0] = _htole32(segment)
         data[1] = _htole32(value[1])
+        data[2] = _htole32(value[2])
         if not hashindex_set(self.index, <unsigned char *>key, data):
             raise Exception('hashindex_set failed')
 
@@ -267,7 +268,7 @@ cdef class NSKeyIterator:
         cdef uint32_t *value = <uint32_t *>(self.key + self.key_size)
         cdef uint32_t segment = _le32toh(value[0])
         assert segment <= _MAX_VALUE, "maximum number of segments reached"
-        return (<char *>self.key)[:self.key_size], (segment, _le32toh(value[1]))
+        return (<char *>self.key)[:self.key_size], (segment, _le32toh(value[1]), _le32toh(value[2]))
 
 
 ChunkIndexEntry = namedtuple('ChunkIndexEntry', 'refcount size csize')

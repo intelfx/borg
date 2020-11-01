@@ -883,25 +883,25 @@ class Repository:
             if tag == TAG_PUT:
                 try:
                     # If this PUT supersedes an older PUT, mark the old segment for compaction and count the free space
-                    s, _ = self.index[key]
+                    s, _, _ = self.index[key]
                     self.compact[s] += size
                     self.segments[s] -= 1
                 except KeyError:
                     pass
-                self.index[key] = segment, offset
+                self.index[key] = segment, offset, size
                 self.segments[segment] += 1
                 self.storage_quota_use += size
             elif tag == TAG_DELETE:
                 try:
                     # if the deleted PUT is not in the index, there is nothing to clean up
-                    s, offset = self.index.pop(key)
+                    s, offset, size = self.index.pop(key)
                 except KeyError:
                     pass
                 else:
                     if self.io.segment_exists(s):
                         # the old index is not necessarily valid for this transaction (e.g. compaction); if the segment
                         # is already gone, then it was already compacted.
-                        self._delete_object(s, offset, key, write_delete=False)
+                        self._delete_object(s, offset, key, size, write_delete=False)
             elif tag == TAG_COMMIT:
                 continue
             else:
@@ -1207,33 +1207,33 @@ class Repository:
         self._delete_object(segment, offset, id, write_delete=True)
 
     # HACK: smart object delete that tries to avoid reading the object being deleted
-    def _delete_object(self, segment, offset, id, *, write_delete):
+    def _delete_object(self, segment, offset, id, size, *, write_delete):
         self.segments[segment] -= 1
-        if self.segments[segment] == 0:
-            # this was the only object in segment
-            size = self.io.segment_size(segment) - MAGIC_LEN
-            logger.debug(
-                f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=1) -- deleting the only object in seg:\n"
-                f"     segment size: {size + MAGIC_LEN}\n"
-                f"     assumed object size: {size}"
-            )
-        elif self.segments[segment] == 1 and offset > MAGIC_LEN:
-            # we are deleting the last object in segment
-            size = self.io.segment_size(segment) - offset
-            logger.debug(
-                f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=2): deleting last object in seg:\n"
-                f"     segment size: {size + offset}\n"
-                f"     assumed object size: {size}"
-            )
-        else:
-            # CRUDE HACK
-            # heuristic works statistically okay with large nobj, but not so okay with small nobj (<10)
-            size = int((self.io.segment_size(segment) - MAGIC_LEN) / (self.segments[segment] + 1))
-            logger.error(
-                f"XXX: CRUDE HACK on delete(segment={segment}, offset={offset}, nobj>=10): assuming proportional size:\n"
-                f"     objects in seg: {self.segments[segment] + 1}\n"
-                f"     assumed object size: {size}"
-            )
+        # if self.segments[segment] == 0:
+        #     # this was the only object in segment
+        #     size = self.io.segment_size(segment) - MAGIC_LEN
+        #     logger.debug(
+        #         f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=1) -- deleting the only object in seg:\n"
+        #         f"     segment size: {size + MAGIC_LEN}\n"
+        #         f"     assumed object size: {size}"
+        #     )
+        # elif self.segments[segment] == 1 and offset > MAGIC_LEN:
+        #     # we are deleting the last object in segment
+        #     size = self.io.segment_size(segment) - offset
+        #     logger.debug(
+        #         f"XXX: NEAT HACK on delete(segment={segment}, offset={offset}, nobj=2): deleting last object in seg:\n"
+        #         f"     segment size: {size + offset}\n"
+        #         f"     assumed object size: {size}"
+        #     )
+        # else:
+        #     # CRUDE HACK
+        #     # heuristic works statistically okay with large nobj, but not so okay with small nobj (<10)
+        #     size = int((self.io.segment_size(segment) - MAGIC_LEN) / (self.segments[segment] + 1))
+        #     logger.error(
+        #         f"XXX: CRUDE HACK on delete(segment={segment}, offset={offset}, nobj>=10): assuming proportional size:\n"
+        #         f"     objects in seg: {self.segments[segment] + 1}\n"
+        #         f"     assumed object size: {size}"
+        #     )
         #else:
         #    size = self.io.read(segment, offset, id, read_data=False)
         #    logger.error(
