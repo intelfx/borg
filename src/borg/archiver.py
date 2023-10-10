@@ -2949,6 +2949,8 @@ class Archiver:
                               help='Output one JSON object per log line instead of formatted text.')
             add_common_option('--lock-wait', metavar='SECONDS', dest='lock_wait', type=int, default=1,
                               help='wait at most SECONDS for acquiring a repository/cache lock (default: %(default)d).')
+            add_common_option('--lock-rc', metavar='CODE', dest='lock_rc', type=int,
+                              help='use CODE as a discrete return code if the repository/cache lock could not be acquired')
             add_common_option('--bypass-lock', dest='lock', action='store_false',
                               default=argparse.SUPPRESS,  # only create args attribute if option is specified
                               help='Bypass locking mechanism')
@@ -5327,7 +5329,10 @@ def main():  # pragma: no cover
             msgid = type(e).__name__
             tb_log_level = logging.ERROR if e.traceback else logging.DEBUG
             tb = f"{traceback.format_exc()}\n{sysinfo()}"
-            exit_code = e.exit_code
+            if type(e).__name__ in ('LockTimeout', ) and args.lock_rc is not None:
+                exit_code = args.lock_rc
+            else:
+                exit_code = e.exit_code
         except RemoteRepository.RPCError as e:
             important = e.exception_class not in ('LockTimeout', ) and e.traceback
             msgid = e.exception_class
@@ -5338,7 +5343,10 @@ def main():  # pragma: no cover
                 msg = e.get_message()
             tb = '\n'.join('Borg server: ' + l for l in e.sysinfo.splitlines())
             tb += "\n" + sysinfo()
-            exit_code = EXIT_ERROR
+            if e.exception_class in ('LockTimeout', ) and args.lock_rc is not None:
+                exit_code = args.lock_rc
+            else:
+                exit_code = EXIT_ERROR
         except Exception:
             msg = 'Local Exception'
             msgid = 'Exception'
@@ -5371,7 +5379,7 @@ def main():  # pragma: no cover
                 rc_logger.info(exit_msg % ('success', exit_code))
             elif exit_code == EXIT_WARNING:
                 rc_logger.warning(exit_msg % ('warning', exit_code))
-            elif exit_code == EXIT_ERROR:
+            elif exit_code in (EXIT_ERROR, args.lock_rc):
                 rc_logger.error(exit_msg % ('error', exit_code))
             elif exit_code >= EXIT_SIGNAL_BASE:
                 rc_logger.error(exit_msg % ('signal', exit_code))
