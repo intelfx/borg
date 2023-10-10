@@ -64,11 +64,13 @@ warning or error occurred during their operation.
 _exit_code = EXIT_SUCCESS
 
 
-def classify_ec(ec):
+def classify_ec(ec, args=None):
     if not isinstance(ec, int):
         raise TypeError("ec must be of type int")
     if EXIT_SIGNAL_BASE <= ec <= 255:
         return "signal"
+    elif args is not None and ec == args.lock_rc:
+        return "error"
     elif ec == EXIT_ERROR or EXIT_ERROR_BASE <= ec < EXIT_WARNING_BASE:
         return "error"
     elif ec == EXIT_WARNING or EXIT_WARNING_BASE <= ec < EXIT_SIGNAL_BASE:
@@ -153,7 +155,7 @@ def get_reset_ec(ec=None):
     return rc
 
 
-def do_show_rc(exit_code):
+def do_show_rc(exit_code, args):
     """Log the program return code using the dedicated 'borg.output.show-rc' logger.
 
     Uses INFO/WARNING/ERROR levels depending on the classified exit code.
@@ -165,7 +167,7 @@ def do_show_rc(exit_code):
         exit_msg = 'terminating with %s status, rc %d'
         rc_logger = logging.getLogger('borg.output.show-rc')
         try:
-            ec_class = classify_ec(exit_code)
+            ec_class = classify_ec(exit_code, args)
         except ValueError:
             rc_logger.error(exit_msg % ('abnormal', exit_code or 666))
         else:

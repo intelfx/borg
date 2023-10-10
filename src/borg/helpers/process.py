@@ -112,7 +112,7 @@ def daemonizing(*, timeout=5, show_rc=False):
                     # happens in the daemon process.
                     if show_rc:
                         from ..helpers import do_show_rc
-                        do_show_rc(exit_code)
+                        do_show_rc(exit_code, None)
                     # Don't call with-body, but die immediately!
                     # return would be sufficient, but we want to pass the exit code.
                     raise _ExitCodeException(exit_code)
