@@ -257,7 +257,6 @@ class CacheConfig:
         return os.path.exists(self.config_path)
 
     def create(self):
-        assert not self.exists()
         config = configparser.ConfigParser(interpolation=None)
         config.add_section('cache')
         config.set('cache', 'version', '1')
@@ -479,8 +478,8 @@ class LocalCache(CacheStatsMixin):
         self.security_manager = SecurityManager(repository)
         self.cache_config = CacheConfig(self.repository, self.path, lock_wait)
 
-        # Warn user before sending data to a never seen before unencrypted repository
-        if not os.path.exists(self.path):
+        if not self.exists():
+            # Warn user before sending data to a never seen before unencrypted repository
             self.security_manager.assert_access_unknown(warn_if_unencrypted, manifest, key)
             self.create()
 
@@ -506,15 +505,26 @@ class LocalCache(CacheStatsMixin):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    def exists(self):
+        return all(
+            os.path.exists(os.path.join(self.path, p))
+            for p in (
+                '',  # self.path itself
+                'config',
+                'chunks',
+                'files',
+            )
+        )
+
     def create(self):
         """Create a new empty cache at `self.path`
         """
-        os.makedirs(self.path)
+        os.makedirs(self.path, exist_ok=True)
         with open(os.path.join(self.path, 'README'), 'w') as fd:
             fd.write(CACHE_README)
         self.cache_config.create()
         ChunkIndex().write(os.path.join(self.path, 'chunks'))
-        os.makedirs(os.path.join(self.path, 'chunks.archive.d'))
+        os.makedirs(os.path.join(self.path, 'chunks.archive.d'), exist_ok=True)
         with SaveFile(os.path.join(self.path, files_cache_name()), binary=True):
             pass  # empty file
         with SaveFile(os.path.join(self.path, 'pre12-meta'), binary=False) as fd:
