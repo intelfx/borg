@@ -5,6 +5,7 @@ import socket
 import uuid
 
 from borg.helpers import safe_unlink
+from borg.helpers import workarounds
 from borg.platformflags import is_win32
 
 """
@@ -113,6 +114,9 @@ def sync_dir(path):
 
 
 def safe_fadvise(fd, offset, len, advice):
+    if advice == 'DONTNEED' and 'skip_dontneed' in workarounds:
+        return
+
     if hasattr(os, 'posix_fadvise'):
         advice = getattr(os, 'POSIX_FADV_' + advice)
         try:
