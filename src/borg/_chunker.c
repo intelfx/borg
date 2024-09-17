@@ -115,10 +115,12 @@ typedef struct {
     int done, eof;
     size_t min_size, buf_size, window_size, remaining, position, last;
     off_t bytes_read, bytes_yielded;
+    int skip_dontneed;
 } Chunker;
 
 static Chunker *
-chunker_init(size_t window_size, uint32_t chunk_mask, size_t min_size, size_t max_size, uint32_t seed)
+chunker_init(size_t window_size, uint32_t chunk_mask, size_t min_size, size_t max_size, uint32_t seed,
+             int want_dontneed)
 {
     Chunker *c = calloc(sizeof(Chunker), 1);
     if(!c) {
@@ -140,6 +142,7 @@ chunker_init(size_t window_size, uint32_t chunk_mask, size_t min_size, size_t ma
         return NULL;
     }
     c->fh = -1;
+    c->skip_dontneed = !want_dontneed;
     return c;
 }
 
@@ -234,7 +237,7 @@ chunker_fill(Chunker *c)
             overshoot = 0;
         }
 
-        if (length - overshoot > 0 || length == 0) {
+        if (!c->skip_dontneed && (length - overshoot > 0 || length == 0)) {
             posix_fadvise(c->fh, offset & ~pagemask, length - overshoot, POSIX_FADV_DONTNEED);
         }
         #endif

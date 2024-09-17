@@ -7,6 +7,7 @@ import os
 from collections import namedtuple
 
 from .constants import CH_DATA, CH_ALLOC, CH_HOLE, MAX_DATA_SIZE, zeros
+from .helpers import workarounds
 
 from libc.stdlib cimport free
 
@@ -14,7 +15,8 @@ cdef extern from "_chunker.c":
     ctypedef int uint32_t
     ctypedef struct _Chunker "Chunker":
         pass
-    _Chunker *chunker_init(int window_size, int chunk_mask, int min_size, int max_size, uint32_t seed)
+    _Chunker *chunker_init(int window_size, int chunk_mask, int min_size, int max_size, uint32_t seed,
+                           int want_dontneed)
     void chunker_set_fd(_Chunker *chunker, object f, int fd)
     void chunker_free(_Chunker *chunker)
     object chunker_process(_Chunker *chunker)
@@ -27,6 +29,8 @@ cdef extern from "_chunker.c":
 # this does not imply that it will actually work on the filesystem,
 # because the FS also needs to support this.
 has_seek_hole = hasattr(os, 'SEEK_DATA') and hasattr(os, 'SEEK_HOLE')
+
+has_dontneed = hasattr(os, 'posix_fadvise') and 'skip_dontneed' not in workarounds
 
 
 _Chunk = namedtuple('_Chunk', 'meta data')
@@ -56,7 +60,7 @@ def dread(offset, size, fd=None, fh=-1):
     use_fh = fh >= 0
     if use_fh:
         data = os.read(fh, size)
-        if hasattr(os, 'posix_fadvise'):
+        if has_dontneed:
             # UNIX-only and, in case of block sizes that are not a multiple of the
             # system's page size, it is better used with a bug-fixed Linux kernel > 4.6.0,
             # see comment/workaround in _chunker.c and borgbackup issue #907.
@@ -246,7 +250,7 @@ cdef class Chunker:
         # see chunker_process, first while loop condition, first term must be able to get True:
         assert hash_window_size + min_size + 1 <= max_size, "too small max_size"
         hash_mask = (1 << hash_mask_bits) - 1
-        self.chunker = chunker_init(hash_window_size, hash_mask, min_size, max_size, seed & 0xffffffff)
+        self.chunker = chunker_init(hash_window_size, hash_mask, min_size, max_size, seed & 0xffffffff, has_dontneed)
         if not self.chunker:
             raise MemoryError('chunker_init failed')
 
